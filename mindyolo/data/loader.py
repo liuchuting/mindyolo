@@ -6,6 +6,7 @@ import multiprocessing
 import cv2
 import mindspore.dataset as de
 
+from mindyolo.data.transform import create_transforms
 from mindyolo.utils import logger
 
 __all__ = ["create_loader"]
@@ -13,6 +14,7 @@ __all__ = ["create_loader"]
 
 def create_loader(
     dataset,
+    transforms_dict,
     batch_collate_fn,
     dataset_column_names,
     batch_size,
@@ -67,6 +69,23 @@ def create_loader(
             shuffle=shuffle,
             python_multiprocessing=python_multiprocessing,
         )
+
+    # create_transforms
+    transforms = create_transforms(
+        transform_pipeline=transforms_dict,
+        input_columns=dataset_column_names,  # output of mosaic+mixup or letterbox
+    )
+
+    for transform in transforms:
+        ds.map(operations=[transform['operations']],
+               input_columns=transform['input_columns'],
+               output_columns=transform['output_columns'],
+               num_parallel_workers=num_parallel_workers,
+               python_multiprocessing=python_multiprocessing,
+               max_rowsize=6)
+
+    ds.project(dataset_column_names)  # final output, happen to be the same as the output of mosaic+mixup or letterbox
+
     ds = ds.batch(
         batch_size, per_batch_map=batch_collate_fn, input_columns=dataset_column_names, drop_remainder=drop_remainder
     )

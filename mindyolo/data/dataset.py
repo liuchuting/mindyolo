@@ -237,6 +237,11 @@ class COCODataset:
         for _i, ori_trans in enumerate(self.transforms_dict):
             _trans = ori_trans.copy()
             func_name, prob = _trans.pop("func_name"), _trans.pop("prob", 1.0)
+
+            # only mosaic, mixup and letterbox are performed in dataset
+            if image is not None and func_name not in ['mosaic', 'mixup', 'letterbox']:
+                continue
+
             if random.random() < prob:
                 if func_name == "mosaic":
                     image, labels = self.mosaic(index, **_trans)
@@ -250,18 +255,19 @@ class COCODataset:
                         self.albumentations = Albumentations(size=self.img_size)
                     image, labels = self.albumentations(image, labels, **_trans)
                 else:
-                    if image is None:
-                        image, hw_ori = self.load_image(index)
-                        labels = self.labels[index].copy()
-                        new_shape = self.img_size if not self.rect else self.batch_shapes[self.batch[index]]
-                        image, labels, hw_ori, hw_scale, pad = self.letterbox(
-                            image,
-                            labels,
-                            hw_ori,
-                            new_shape,
-                        )
                     image, labels = getattr(self, func_name)(image, labels, **_trans)
 
+            # sometimes random.random() > prob and no image is load
+            if image is None:
+                image, hw_ori = self.load_image(index)
+                labels = self.labels[index].copy()
+                new_shape = self.img_size if not self.rect else self.batch_shapes[self.batch[index]]
+                image, labels, hw_ori, hw_scale, pad = self.letterbox(
+                    image,
+                    labels,
+                    hw_ori,
+                    new_shape,
+                )
         image = np.ascontiguousarray(image)
 
         if self.is_training:

@@ -282,6 +282,7 @@ def main(args):
     )
     dataloader = create_loader(
         dataset=dataset,
+        transforms_dict=args.data.test_transforms,
         batch_collate_fn=dataset.test_collate_fn,
         dataset_column_names=dataset.dataset_column_names,
         batch_size=args.per_batch_size,

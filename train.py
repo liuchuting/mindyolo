@@ -139,6 +139,7 @@ def train(args):
         )
         _dataloader = create_loader(
             dataset=_dataset,
+            transforms_dict=stage_transforms[stage],
             batch_collate_fn=_dataset.train_collate_fn,
             dataset_column_names=_dataset.dataset_column_names,
             batch_size=args.per_batch_size,
@@ -169,6 +170,7 @@ def train(args):
         )
         eval_dataloader = create_loader(
             dataset=eval_dataset,
+            transforms_dict=args.data.test_transforms,
             batch_collate_fn=eval_dataset.test_collate_fn,
             dataset_column_names=eval_dataset.dataset_column_names,
             batch_size=args.per_batch_size,
