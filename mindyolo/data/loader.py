@@ -2,8 +2,6 @@
 Create dataloader
 """
 import multiprocessing
-
-import cv2
 import mindspore.dataset as de
 
 from mindyolo.data.transform import create_transforms
@@ -77,14 +75,14 @@ def create_loader(
     )
 
     for transform in transforms:
-        ds.map(operations=[transform['operations']],
+        ds = ds.map(operations=transform['operations'],
                input_columns=transform['input_columns'],
                output_columns=transform['output_columns'],
                num_parallel_workers=num_parallel_workers,
                python_multiprocessing=python_multiprocessing,
                max_rowsize=6)
 
-    ds.project(dataset_column_names)  # final output, happen to be the same as the output of mosaic+mixup or letterbox
+    ds = ds.project(dataset_column_names)  # final output, happen to be the same as the output of mosaic+mixup or letterbox
 
     ds = ds.batch(
         batch_size, per_batch_map=batch_collate_fn, input_columns=dataset_column_names, drop_remainder=drop_remainder
