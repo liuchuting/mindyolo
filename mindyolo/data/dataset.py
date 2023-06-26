@@ -8,7 +8,7 @@ from tqdm import tqdm
 import hashlib
 import random
 import glob
-
+import time
 from mindyolo.utils import logger
 
 from .albumentations import Albumentations
@@ -239,35 +239,44 @@ class COCODataset:
             func_name, prob = _trans.pop("func_name"), _trans.pop("prob", 1.0)
 
             # only mosaic, mixup and letterbox are performed in dataset
-            if image is not None and func_name not in ['mosaic', 'mixup', 'letterbox']:
+            if func_name not in ['mosaic', 'mixup', 'letterbox', 'albumentations']:
                 continue
 
             if random.random() < prob:
                 if func_name == "mosaic":
+                    t = time.time()
                     image, labels = self.mosaic(index, **_trans)
+                    print("mosaic:", (time.time()-t)*1000, "ms")
                 elif func_name == "letterbox":
+                    t = time.time()
                     image, hw_ori = self.load_image(index)
                     labels = self.labels[index].copy()
                     new_shape = self.img_size if not self.rect else self.batch_shapes[self.batch[index]]
                     image, labels, hw_ori, hw_scale, pad = self.letterbox(image, labels, hw_ori, new_shape, **_trans)
+                    print("letterbox:", (time.time() - t) * 1000, "ms")
                 elif func_name == "albumentations":
+                    t = time.time()
                     if getattr(self, "albumentations", None) is None:
                         self.albumentations = Albumentations(size=self.img_size)
                     image, labels = self.albumentations(image, labels, **_trans)
+                    print("albumentations:", (time.time() - t) * 1000, "ms")
                 else:
+                    t = time.time()
                     image, labels = getattr(self, func_name)(image, labels, **_trans)
+                    print(func_name, ":", (time.time() - t) * 1000, "ms")
 
-            # sometimes random.random() > prob and no image is load
-            if image is None:
-                image, hw_ori = self.load_image(index)
-                labels = self.labels[index].copy()
-                new_shape = self.img_size if not self.rect else self.batch_shapes[self.batch[index]]
-                image, labels, hw_ori, hw_scale, pad = self.letterbox(
-                    image,
-                    labels,
-                    hw_ori,
-                    new_shape,
-                )
+        if image is None:
+            t = time.time()
+            image, hw_ori = self.load_image(index)
+            labels = self.labels[index].copy()
+            new_shape = self.img_size if not self.rect else self.batch_shapes[self.batch[index]]
+            image, labels, hw_ori, hw_scale, pad = self.letterbox(
+                image,
+                labels,
+                hw_ori,
+                new_shape,
+            )
+            print("letterbox_end:", (time.time() - t) * 1000, "ms")
         image = np.ascontiguousarray(image)
 
         if self.is_training:
