@@ -7,7 +7,7 @@ from PIL import ExifTags, Image
 from tqdm import tqdm
 import hashlib
 import random
-import glob
+import glob, time
 
 from mindyolo.utils import logger
 
@@ -16,7 +16,6 @@ from .copypaste import copy_paste
 from .perspective import random_perspective
 
 __all__ = ["COCODataset"]
-
 
 # Get orientation exif tag
 for orientation in ExifTags.TAGS.keys():
@@ -49,17 +48,17 @@ class COCODataset:
     """
 
     def __init__(
-        self,
-        dataset_path="",
-        img_size=640,
-        transforms_dict=None,
-        is_training=False,
-        augment=False,
-        rect=False,
-        single_cls=False,
-        batch_size=32,
-        stride=32,
-        pad=0.0,
+            self,
+            dataset_path="",
+            img_size=640,
+            transforms_dict=None,
+            is_training=False,
+            augment=False,
+            rect=False,
+            single_cls=False,
+            batch_size=32,
+            stride=32,
+            pad=0.0,
     ):
         self.cache_version = 0.1
         self.path = dataset_path
@@ -75,7 +74,7 @@ class COCODataset:
         self.transforms_dict = transforms_dict
         self.is_training = is_training
         if is_training:
-            self.dataset_column_names = ["image", "labels", "img_files"]
+            self.dataset_column_names = ["image", "labels", "img_files", "time"]
         else:
             self.dataset_column_names = ["image", "labels", "img_files", "hw_ori", "hw_scale", "pad"]
 
@@ -103,7 +102,7 @@ class COCODataset:
         if cache_path.is_file():
             cache, exists = np.load(cache_path, allow_pickle=True).item(), True  # load dict
             if cache["version"] == self.cache_version and cache["hash"] == self._get_hash(
-                self.label_files + self.img_files
+                    self.label_files + self.img_files
             ):
                 logger.info(f"Dataset Cache file hash/version check success.")
                 logger.info(f"Load dataset cache from [{cache_path}] success.")
@@ -233,13 +232,25 @@ class COCODataset:
         return x
 
     def __getitem__(self, index):
+        mosaic_time = 0
+        mixup_time = 0
+        hsv_time = 0
+        pastein_time = 0
+        label_norm_time = 0
+        fliplr_time = 0
+        label_pad_time = 0
+        image_norm_time = 0
+        image_transpose_time = 0
+        letterbox_time = 0
         index, image, labels, segment, hw_ori, hw_scale, pad = index, None, None, None, None, None, None
         for _i, ori_trans in enumerate(self.transforms_dict):
             _trans = ori_trans.copy()
             func_name, prob = _trans.pop("func_name"), _trans.pop("prob", 1.0)
             if random.random() < prob:
                 if func_name == "mosaic":
+                    t = time.time()
                     image, labels = self.mosaic(index, **_trans)
+                    mosaic_time += (time.time() - t) * 1000
                 elif func_name == "letterbox":
                     image, hw_ori = self.load_image(index)
                     labels = self.labels[index].copy()
@@ -251,6 +262,7 @@ class COCODataset:
                     image, labels = self.albumentations(image, labels, **_trans)
                 else:
                     if image is None:
+                        t = time.time()
                         image, hw_ori = self.load_image(index)
                         labels = self.labels[index].copy()
                         new_shape = self.img_size if not self.rect else self.batch_shapes[self.batch[index]]
@@ -260,12 +272,42 @@ class COCODataset:
                             hw_ori,
                             new_shape,
                         )
+                        letterbox_time += (time.time() - t) * 1000
+                    t = time.time()
                     image, labels = getattr(self, func_name)(image, labels, **_trans)
+                    if func_name == "hsv_augment":
+                        hsv_time += (time.time() - t) * 1000
+                    if func_name == "mixup":
+                        mixup_time += (time.time() - t) * 1000
+                    elif func_name == "pastein":
+                        pastein_time += (time.time() - t) * 1000
+                    elif func_name == "label_norm":
+                        label_norm_time += (time.time() - t) * 1000
+                    elif func_name == "fliplr":
+                        fliplr_time += (time.time() - t) * 1000
+                    elif func_name == "label_pad":
+                        label_pad_time += (time.time() - t) * 1000
+                    elif func_name == "image_norm":
+                        image_norm_time += (time.time() - t) * 1000
+                    elif func_name == "image_transpose":
+                        image_transpose_time += (time.time() - t) * 1000
+        time_dict = {
+            "mosaic": mosaic_time,
+            "mixup": mixup_time,
+            "hsv": hsv_time,
+            "pastein": pastein_time,
+            "label_norm": label_norm_time,
+            "fliplr": fliplr_time,
+            "label_pad": label_pad_time,
+            "image_norm": image_norm_time,
+            "image_transpose": image_transpose_time,
+            "letterbox": letterbox_time,
+        }
 
         image = np.ascontiguousarray(image)
 
         if self.is_training:
-            return image, labels, self.img_files[index]
+            return image, labels, self.img_files[index], time_dict
         else:
             return image, labels, self.img_files[index], hw_ori, hw_scale, pad
 
@@ -339,15 +381,15 @@ class COCODataset:
         return sample_labels, sample_images, sample_masks
 
     def mosaic(
-        self,
-        index,
-        mosaic9_prob=0.0,
-        copy_paste_prob=0.0,
-        degrees=0.0,
-        translate=0.2,
-        scale=0.9,
-        shear=0.0,
-        perspective=0.0,
+            self,
+            index,
+            mosaic9_prob=0.0,
+            copy_paste_prob=0.0,
+            degrees=0.0,
+            translate=0.2,
+            scale=0.9,
+            shear=0.0,
+            perspective=0.0,
     ):
         assert mosaic9_prob >= 0.0 and mosaic9_prob <= 1.0
         if random.random() < (1 - mosaic9_prob):
@@ -461,12 +503,12 @@ class COCODataset:
             segments9.extend(segments)
 
             # Image
-            img9[y1:y2, x1:x2] = img[y1 - pady :, x1 - padx :]  # img9[ymin:ymax, xmin:xmax]
+            img9[y1:y2, x1:x2] = img[y1 - pady:, x1 - padx:]  # img9[ymin:ymax, xmin:xmax]
             hp, wp = h, w  # height, width previous
 
         # Offset
         yc, xc = [int(random.uniform(0, s)) for _ in mosaic_border]  # mosaic center x, y
-        img9 = img9[yc : yc + 2 * s, xc : xc + 2 * s]
+        img9 = img9[yc: yc + 2 * s, xc: xc + 2 * s]
 
         # Concat/clip labels
         labels9 = np.concatenate(labels9, 0)
@@ -549,7 +591,7 @@ class COCODataset:
                 ioa = np.zeros(1)
 
             if (
-                (ioa < 0.30).all() and len(sample_labels) and (xmax > xmin + 20) and (ymax > ymin + 20)
+                    (ioa < 0.30).all() and len(sample_labels) and (xmax > xmin + 20) and (ymax > ymin + 20)
             ):  # allow 30% obscuration of existing labels
                 sel_ind = random.randint(0, len(sample_labels) - 1)
                 hs, ws, cs = sample_images[sel_ind].shape
@@ -560,7 +602,7 @@ class COCODataset:
                 if (r_w > 10) and (r_h > 10):
                     r_mask = cv2.resize(sample_masks[sel_ind], (r_w, r_h))
                     r_image = cv2.resize(sample_images[sel_ind], (r_w, r_h))
-                    temp_crop = image[ymin : ymin + r_h, xmin : xmin + r_w]
+                    temp_crop = image[ymin: ymin + r_h, xmin: xmin + r_w]
                     m_ind = r_mask > 0
                     if m_ind.astype(np.int).sum() > 60:
                         temp_crop[m_ind] = r_image[m_ind]
@@ -570,12 +612,13 @@ class COCODataset:
                         else:
                             labels = np.array([[sample_labels[sel_ind], *box]])
 
-                        image[ymin : ymin + r_h, xmin : xmin + r_w] = temp_crop  # Modify on the original image
+                        image[ymin: ymin + r_h, xmin: xmin + r_w] = temp_crop  # Modify on the original image
 
         return image, labels
 
     def random_perspective(
-        self, image, labels, segments=(), degrees=10, translate=0.1, scale=0.1, shear=10, perspective=0.0, border=(0, 0)
+            self, image, labels, segments=(), degrees=10, translate=0.1, scale=0.1, shear=10, perspective=0.0,
+            border=(0, 0)
     ):
         image, labels = random_perspective(
             image,
@@ -710,12 +753,12 @@ class COCODataset:
                 mask = np.zeros(img.shape, np.uint8)
 
                 cv2.drawContours(mask, [segments[j].astype(np.int32)], -1, (255, 255, 255), cv2.FILLED)
-                sample_masks.append(mask[box[1] : box[3], box[0] : box[2], :])
+                sample_masks.append(mask[box[1]: box[3], box[0]: box[2], :])
 
                 result = cv2.bitwise_and(src1=img, src2=mask)
                 i = result > 0  # pixels to replace
                 mask[i] = result[i]  # cv2.imwrite('debug.jpg', img)  # debug
-                sample_images.append(mask[box[1] : box[3], box[0] : box[2], :])
+                sample_images.append(mask[box[1]: box[3], box[0]: box[2], :])
 
         return sample_labels, sample_images, sample_masks
 
@@ -754,10 +797,10 @@ class COCODataset:
         return xyxy2xywh(np.array(boxes))  # cls, xywh
 
     @staticmethod
-    def train_collate_fn(imgs, labels, path, batch_info):
+    def train_collate_fn(imgs, labels, path, time, batch_info):
         for i, l in enumerate(labels):
             l[:, 0] = i  # add target image index for build_targets()
-        return np.stack(imgs, 0), np.stack(labels, 0), path
+        return np.stack(imgs, 0), np.stack(labels, 0), path, time
 
     @staticmethod
     def test_collate_fn(imgs, labels, path, hw_ori, hw_scale, pad, batch_info):
@@ -783,7 +826,7 @@ def bbox_ioa(box1, box2):
 
     # Intersection area
     inter_area = (np.minimum(b1_x2, b2_x2) - np.maximum(b1_x1, b2_x1)).clip(0) * (
-        np.minimum(b1_y2, b2_y2) - np.maximum(b1_y1, b2_y1)
+            np.minimum(b1_y2, b2_y2) - np.maximum(b1_y1, b2_y1)
     ).clip(0)
 
     # box2 area

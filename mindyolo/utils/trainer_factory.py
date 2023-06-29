@@ -18,19 +18,19 @@ __all__ = [
 
 
 def create_trainer(
-    model_name: str,
-    train_step_fn: types.FunctionType,
-    scaler,
-    network: nn.Cell,
-    loss_fn: nn.Cell,
-    ema: nn.Cell,
-    optimizer: nn.Cell,
-    dataloader: ms.dataset.Dataset,
-    steps_per_epoch: int,
-    callback: List[BaseCallback],
-    reducer,
-    data_sink,
-    profiler
+        model_name: str,
+        train_step_fn: types.FunctionType,
+        scaler,
+        network: nn.Cell,
+        loss_fn: nn.Cell,
+        ema: nn.Cell,
+        optimizer: nn.Cell,
+        dataloader: ms.dataset.Dataset,
+        steps_per_epoch: int,
+        callback: List[BaseCallback],
+        reducer,
+        data_sink,
+        profiler
 ):
     return Trainer(
         model_name=model_name,
@@ -51,20 +51,20 @@ def create_trainer(
 
 class Trainer:
     def __init__(
-        self,
-        model_name,
-        train_step_fn,
-        scaler,
-        network,
-        loss_fn,
-        ema,
-        optimizer,
-        dataloader,
-        steps_per_epoch,
-        callback,
-        reducer,
-        data_sink,
-        profiler
+            self,
+            model_name,
+            train_step_fn,
+            scaler,
+            network,
+            loss_fn,
+            ema,
+            optimizer,
+            dataloader,
+            steps_per_epoch,
+            callback,
+            reducer,
+            data_sink,
+            profiler
     ):
         self.model_name = model_name
         self.train_step_fn = train_step_fn
@@ -82,24 +82,24 @@ class Trainer:
         self.profiler = profiler
 
     def train(
-        self,
-        epochs: int,
-        main_device: bool,
-        warmup_step: int = 0,
-        warmup_momentum: Union[list, None] = None,
-        accumulate: int = 1,
-        overflow_still_update: bool = False,
-        keep_checkpoint_max: int = 10,
-        log_interval: int = 1,
-        loss_item_name: list = [],
-        save_dir: str = "",
-        enable_modelarts: bool = False,
-        train_url: str = "",
-        run_eval: bool = False,
-        test_fn: types.FunctionType = None,
-        ms_jit: bool = True,
-        rank_size: int = 8,
-        profiler_step_num: int = 1
+            self,
+            epochs: int,
+            main_device: bool,
+            warmup_step: int = 0,
+            warmup_momentum: Union[list, None] = None,
+            accumulate: int = 1,
+            overflow_still_update: bool = False,
+            keep_checkpoint_max: int = 10,
+            log_interval: int = 1,
+            loss_item_name: list = [],
+            save_dir: str = "",
+            enable_modelarts: bool = False,
+            train_url: str = "",
+            run_eval: bool = False,
+            test_fn: types.FunctionType = None,
+            ms_jit: bool = True,
+            rank_size: int = 8,
+            profiler_step_num: int = 1
     ):
         # Attr
         self.epochs = epochs
@@ -151,11 +151,32 @@ class Trainer:
         )
         self._on_train_begin(run_context)
         for i, data in enumerate(loader):
+            mosaic = sum(data["time"]['mosaic'])
+            mixup = sum(data["time"]['mixup'])
+            hsv = sum(data["time"]['hsv'])
+            pastein = sum(data["time"]['pastein'])
+            label_norm = sum(data["time"]['label_norm'])
+            label_pad = sum(data["time"]['label_pad'])
+            image_norm = sum(data["time"]['image_norm'])
+            image_transpose = sum(data["time"]['image_transpose'])
+            letterbox = sum(data["time"]['letterbox'])
+            total = mosaic+mixup+hsv+pastein+label_norm+label_pad+image_norm+image_transpose+letterbox
+            print("mosaic:", mosaic, "ms，", len(data["time"]['mosaic']), "次", "percent %", mosaic/total*100, "avg", mosaic/16)
+            print("mixup", mixup, "ms，", len(data["time"]['mixup']), "次", "percent %", mixup/total*100, "avg", mixup/16)
+            print("hsv", hsv, "ms，", len(data["time"]['hsv']), "次", "percent %", hsv/total*100, "avg", hsv/16)
+            print("pastein", pastein, "ms，", len(data["time"]['pastein']), "次", "percent %", pastein/total*100, "avg", pastein/16)
+            print("label_norm", label_norm, "ms，", len(data["time"]['label_norm']), "次", "percent %", label_norm/total*100, "avg", label_norm/16)
+            print("label_pad", label_pad, "ms，", len(data["time"]['label_pad']), "次", "percent %", label_pad/total*100, "avg", label_pad/16)
+            print("image_norm", image_norm, "ms，", len(data["time"]['image_norm']), "次", "percent %", image_norm/total*100, "avg", image_norm/16)
+            print("image_transpose", image_transpose, "ms，", len(data["time"]['image_transpose']), "次", "percent %", image_transpose/total*100, "avg", image_transpose/16)
+            print("letterbox", letterbox, "ms，", len(data["time"]['letterbox']), "次", "percent %", letterbox/total*100, "avg", letterbox/16)
+            print()
+            print()
+
             cur_epoch = (i // self.steps_per_epoch) + 1
             cur_step = (i % self.steps_per_epoch) + 1
             run_context.cur_epoch_index = cur_epoch
             run_context.cur_step_index = cur_step
-
             if cur_step == 1:
                 self._on_train_epoch_begin(run_context)
             self.global_step += 1
@@ -166,7 +187,7 @@ class Trainer:
 
             imgs, labels = data["image"], data["labels"]
             self._on_train_step_begin(run_context)
-            run_context.loss, run_context.lr = self.train_step(imgs, labels, cur_step=cur_step,cur_epoch=cur_epoch)
+            run_context.loss, run_context.lr = self.train_step(imgs, labels, cur_step=cur_step, cur_epoch=cur_epoch)
             self._on_train_step_end(run_context)
 
             # train log
@@ -209,23 +230,23 @@ class Trainer:
         logger.info("End Train.")
 
     def train_with_datasink(
-        self,
-        epochs: int,
-        main_device: bool,
-        warmup_epoch: int = 0,
-        warmup_momentum: Union[list, None] = None,
-        keep_checkpoint_max: int = 10,
-        log_interval: int = 1,
-        loss_item_name: list = [],
-        save_dir: str = "",
-        enable_modelarts: bool = False,
-        train_url: str = "",
-        run_eval: bool = False,
-        test_fn: types.FunctionType = None,
-        overflow_still_update: bool = False,
-        ms_jit: bool = True,
-        rank_size: int = 8,
-        profiler_step_num: int = 1
+            self,
+            epochs: int,
+            main_device: bool,
+            warmup_epoch: int = 0,
+            warmup_momentum: Union[list, None] = None,
+            keep_checkpoint_max: int = 10,
+            log_interval: int = 1,
+            loss_item_name: list = [],
+            save_dir: str = "",
+            enable_modelarts: bool = False,
+            train_url: str = "",
+            run_eval: bool = False,
+            test_fn: types.FunctionType = None,
+            overflow_still_update: bool = False,
+            ms_jit: bool = True,
+            rank_size: int = 8,
+            profiler_step_num: int = 1
     ):
         # Modify dataset columns name for data sink mode, because dataloader could not send string data to device.
         loader = self.dataloader.project(["image", "labels"])
@@ -347,7 +368,7 @@ class Trainer:
                 logger.info(f"Epoch {cur_epoch}/{epochs}, epoch time: {(time.time() - s_epoch_time) / 60:.2f} min.")
                 s_epoch_time = time.time()
 
-            if self.profiler and math.ceil(self.profiler_step_num/self.steps_per_epoch) == cur_epoch:
+            if self.profiler and math.ceil(self.profiler_step_num / self.steps_per_epoch) == cur_epoch:
                 break
         self._on_train_end(run_context)
         logger.info("End Train.")
